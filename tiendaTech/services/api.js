@@ -6,16 +6,24 @@ const API_URL = 'http://10.0.2.2:1337/api';
 export const api = axios.create({
   baseURL: API_URL,
   timeout: 10000,
+  headers: {
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0'
+  }
 });
 
-// Interceptor para manejar errores
-api.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    console.error('API Error:', error.response?.data || error.message);
-    return Promise.reject(error);
+// Interceptor para agregar timestamp y evitar cache
+api.interceptors.request.use((config) => {
+  // Agregar timestamp para evitar cache
+  if (config.method === 'get') {
+    config.params = {
+      ...config.params,
+      _t: Date.now() // Timestamp único
+    };
   }
-);
+  return config;
+});
 
 // Servicios para productos
 export const productService = {
@@ -24,13 +32,9 @@ export const productService = {
   getCategories: () => api.get('/categories?populate=*'),
   getBrands: () => api.get('/brands?populate=*'),
   
-  // Para filtros (futuro)
-  getProductsByCategory: (categoryId) => 
-    api.get(`/products?filters[category][id][$eq]=${categoryId}&populate=*`),
-  getProductsByBrand: (brandId) => 
-    api.get(`/products?filters[brand][id][$eq]=${brandId}&populate=*`),
+  // NUEVO: Actualizar stock después de compra
+  updateStock: (items) => api.post('/products/update-stock', { items }),
   
-  // Para búsqueda (futuro)
-  searchProducts: (query) => 
-    api.get(`/products?filters[name][$containsi]=${query}&populate=*`),
+  // Para forzar recarga sin cache
+  getProductsNoCache: () => api.get(`/products?populate=*&_t=${Date.now()}`),
 };

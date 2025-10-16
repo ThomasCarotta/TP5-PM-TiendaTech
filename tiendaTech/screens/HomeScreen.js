@@ -16,7 +16,7 @@ import Button from '../components/common/Button';
 import { colors } from '../styles/colors';
 import globalStyles from '../styles/global';
 
-const HomeScreen = ({ navigation }) => {
+const HomeScreen = ({ navigation, route }) => {
   const [products, setProducts] = useState([]);
   const [filteredProducts, setFilteredProducts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -24,6 +24,7 @@ const HomeScreen = ({ navigation }) => {
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [favorites, setFavorites] = useState([]);
+  const [dataVersion, setDataVersion] = useState(0); // Para forzar recargas
 
   // Configurar header con botones
   React.useLayoutEffect(() => {
@@ -47,24 +48,42 @@ const HomeScreen = ({ navigation }) => {
               </View>
             )}
           </TouchableOpacity>
+          {/* Botón de recarga */}
+          <TouchableOpacity 
+            onPress={() => loadProducts(false, true)}
+            style={styles.headerButton}
+          >
+            <Text style={styles.headerIcon}>🔄</Text>
+          </TouchableOpacity>
         </View>
       ),
     });
   }, [navigation, favorites]);
 
   // Cargar productos
-  const loadProducts = async (isRefreshing = false) => {
+  const loadProducts = async (isRefreshing = false, forceRefresh = false) => {
     try {
       if (!isRefreshing) {
         setLoading(true);
       }
       setError(null);
       
+      console.log('🔄 Cargando productos...', forceRefresh ? '(forzado)' : '');
+      
+      // Forzar recarga sin cache
       const response = await productService.getProducts();
+      
       setProducts(response.data.data);
       setFilteredProducts(response.data.data);
+      
+      // Incrementar versión para forzar re-render
+      if (forceRefresh) {
+        setDataVersion(prev => prev + 1);
+      }
+      
+      console.log('✅ Productos cargados:', response.data.data.length);
     } catch (err) {
-      console.error('Error loading products:', err);
+      console.error('❌ Error loading products:', err);
       setError(err.message || 'Error al cargar los productos');
     } finally {
       setLoading(false);
@@ -76,6 +95,26 @@ const HomeScreen = ({ navigation }) => {
   useEffect(() => {
     loadProducts();
   }, []);
+
+  // Recargar cuando la pantalla gane foco (vuelva de otra pantalla)
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      console.log('🎯 Pantalla en foco - recargando productos');
+      loadProducts(false, true);
+    });
+
+    return unsubscribe;
+  }, [navigation]);
+
+  // Recargar cuando lleguemos de una compra
+  useEffect(() => {
+    if (route.params?.refresh) {
+      console.log('🛒 Recargando desde compra exitosa');
+      loadProducts(false, true);
+      // Limpiar el parámetro
+      navigation.setParams({ refresh: false });
+    }
+  }, [route.params?.refresh]);
 
   // Filtrar productos cuando cambie la búsqueda
   useEffect(() => {
@@ -94,7 +133,7 @@ const HomeScreen = ({ navigation }) => {
   // Pull to refresh
   const handleRefresh = () => {
     setRefreshing(true);
-    loadProducts(true);
+    loadProducts(true, true); // Forzar recarga completa
   };
 
   // Navegar al detalle del producto
@@ -104,7 +143,7 @@ const HomeScreen = ({ navigation }) => {
 
   // Reintentar carga
   const handleRetry = () => {
-    loadProducts();
+    loadProducts(false, true);
   };
 
   // Manejar favoritos
@@ -126,7 +165,6 @@ const HomeScreen = ({ navigation }) => {
       return;
     }
     
-    // Navegar a una pantalla de favoritos o mostrar modal
     Alert.alert(
       'Tus Favoritos', 
       `Tienes ${favorites.length} producto${favorites.length !== 1 ? 's' : ''} en favoritos`,
@@ -191,6 +229,13 @@ const HomeScreen = ({ navigation }) => {
               onPress={showFavorites}
               style={styles.filterButton}
             />
+            <Button
+              title="Recargar"
+              variant="outline"
+              size="small"
+              onPress={() => loadProducts(false, true)}
+              style={styles.filterButton}
+            />
           </View>
         </View>
 
@@ -229,6 +274,7 @@ const HomeScreen = ({ navigation }) => {
             refreshing={refreshing}
             onToggleFavorite={toggleFavorite}
             isFavorite={isFavorite}
+            key={dataVersion} // Forzar re-render cuando cambie la versión
           />
         </View>
 
@@ -238,6 +284,7 @@ const HomeScreen = ({ navigation }) => {
             <Text style={styles.productCount}>
               {filteredProducts.length} producto{filteredProducts.length !== 1 ? 's' : ''} mostrado{filteredProducts.length !== 1 ? 's' : ''}
               {searchQuery && ` de ${products.length}`}
+              {' • '}v{dataVersion}
             </Text>
           </View>
         )}
@@ -260,12 +307,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   headerButton: {
-    marginLeft: 15,
+    marginLeft: 12,
     padding: 8,
     position: 'relative',
   },
   headerIcon: {
-    fontSize: 20,
+    fontSize: 18,
   },
   badge: {
     position: 'absolute',

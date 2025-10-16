@@ -1,5 +1,6 @@
 // context/CartContext.js
 import React, { createContext, useState, useContext } from 'react';
+import { productService } from '../services/api'; // ← Importar el servicio
 
 const CartContext = createContext();
 
@@ -30,10 +31,9 @@ export const CartProvider = ({ children }) => {
           const newQuantity = existingItem.quantity + quantity;
           if (newQuantity > product.stock) {
             reject(new Error(`No puedes agregar más de ${product.stock} unidades`));
-            return prevItems; // No cambia el estado
+            return prevItems;
           }
 
-          // Si ya existe, aumentar la cantidad
           const updatedItems = prevItems.map(item =>
             item.id === product.id
               ? { ...item, quantity: newQuantity }
@@ -42,7 +42,6 @@ export const CartProvider = ({ children }) => {
           resolve(updatedItems);
           return updatedItems;
         } else {
-          // Si no existe, agregar nuevo item
           const newItem = {
             id: product.id,
             name: product.name,
@@ -50,7 +49,7 @@ export const CartProvider = ({ children }) => {
             discount: product.discount || 0,
             brand: product.brand,
             images: product.images,
-            stock: product.stock, // ← Guardamos el stock disponible
+            stock: product.stock,
             quantity: quantity,
             addedAt: new Date().toISOString()
           };
@@ -75,10 +74,9 @@ export const CartProvider = ({ children }) => {
     setCartItems(prevItems =>
       prevItems.map(item => {
         if (item.id === productId) {
-          // Validar que no exceda el stock
           if (newQuantity > item.stock) {
             alert(`No puedes comprar más de ${item.stock} unidades de ${item.name}`);
-            return item; // No cambia la cantidad
+            return item;
           }
           return { ...item, quantity: newQuantity };
         }
@@ -113,21 +111,39 @@ export const CartProvider = ({ children }) => {
     return item ? item.quantity : 0;
   };
 
-  // Nueva función: procesar compra y reducir stock
+  // NUEVO: Procesar compra y ACTUALIZAR STOCK REAL en Strapi
   const processPurchase = async () => {
     try {
-      // Aquí iría la llamada a la API para actualizar stock en Strapi
-      // Por ahora simulamos la actualización
-      console.log('Procesando compra y reduciendo stock...');
+      // Preparar datos para enviar a Strapi
+      const purchaseItems = cartItems.map(item => ({
+        productId: item.id,
+        quantity: item.quantity
+      }));
+
+      console.log('🔄 Actualizando stock en Strapi...', purchaseItems);
+
+      // Llamar a la API de Strapi para actualizar stock
+      const response = await productService.updateStock(purchaseItems);
       
-      // En una app real, aquí harías:
-      // await api.post('/purchase', { items: cartItems });
+      if (response.data.success) {
+        console.log('✅ Stock actualizado exitosamente:', response.data.results);
+        
+        // Limpiar carrito después de la compra exitosa
+        clearCart();
+        
+        return { 
+          success: true, 
+          results: response.data.results,
+          message: 'Compra procesada y stock actualizado'
+        };
+      } else {
+        // Algunos productos no se pudieron actualizar
+        const failedProducts = response.data.results.filter(r => !r.success);
+        throw new Error(`Error al actualizar stock: ${response.data.message}. Fallaron: ${failedProducts.length} productos`);
+      }
       
-      // Limpiar carrito después de la compra
-      clearCart();
-      return true;
     } catch (error) {
-      console.error('Error procesando compra:', error);
+      console.error('❌ Error procesando compra:', error);
       throw error;
     }
   };
@@ -142,7 +158,7 @@ export const CartProvider = ({ children }) => {
     getTotalItems,
     isInCart,
     getProductQuantity,
-    processPurchase // ← Nueva función
+    processPurchase
   };
 
   return (

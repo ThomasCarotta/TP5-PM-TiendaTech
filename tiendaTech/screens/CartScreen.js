@@ -13,7 +13,6 @@ import CartItem from '../components/cart/CartItem';
 import CartSummary from '../components/cart/CartSummary';
 import Button from '../components/common/Button';
 import Card from '../components/common/Card';
-import Loading from '../components/common/Loading';
 import { colors } from '../styles/colors';
 import globalStyles from '../styles/global';
 
@@ -24,7 +23,8 @@ const CartScreen = ({ navigation }) => {
     getCartTotal, 
     getTotalItems,
     updateQuantity,
-    removeFromCart 
+    removeFromCart,
+    processPurchase
   } = useCart();
 
   // Manejar cambio de cantidad
@@ -66,19 +66,66 @@ const CartScreen = ({ navigation }) => {
     );
   };
 
-  // Manejar checkout simulado
-  const handleCheckout = () => {
+  // Manejar checkout - ACTUALIZAR STOCK REAL
+  const handleCheckout = async () => {
     if (cartItems.length === 0) return;
 
+    // Verificar stock antes de procesar
+    const outOfStockItems = cartItems.filter(item => item.quantity > item.stock);
+    if (outOfStockItems.length > 0) {
+      const productNames = outOfStockItems.map(item => item.name).join(', ');
+      Alert.alert(
+        'Stock insuficiente',
+        `Los siguientes productos no tienen suficiente stock: ${productNames}`,
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
     Alert.alert(
-      'Checkout Simulado',
-      `¡Gracias por tu compra!\n\nTotal: $${getCartTotal().toFixed(2)}\n\nEsta es una simulación del proceso de checkout.`,
+      'Confirmar Compra',
+      `¿Proceder con la compra por $${getCartTotal().toFixed(2)}?\n\nEsta acción actualizará el stock en el sistema.`,
       [
+        { text: 'Cancelar', style: 'cancel' },
         { 
-          text: 'OK', 
-          onPress: () => {
-            clearCart();
-            navigation.navigate('Home');
+          text: 'Confirmar Compra', 
+          onPress: async () => {
+            try {
+              // Procesar compra y ACTUALIZAR STOCK REAL en Strapi
+              const result = await processPurchase();
+              
+              if (result.success) {
+                Alert.alert(
+                  '¡Compra Exitosa! 🎉',
+                  `Tu compra por $${getCartTotal().toFixed(2)} ha sido procesada.\n\n✅ Stock actualizado en el sistema\n✅ Carrito limpiado\n✅ Productos actualizados`,
+                  [
+                    { 
+                      text: 'Continuar Comprando', 
+                      onPress: () => {
+                        // Navegar a Home y forzar recarga
+                        navigation.navigate('Home', { 
+                          refresh: true, // ← Parámetro para forzar recarga
+                          timestamp: Date.now() 
+                        });
+                      }
+                    }
+                  ]
+                );
+              }
+            } catch (error) {
+              console.error('❌ Error en checkout:', error);
+              Alert.alert(
+                'Error en la compra',
+                `No se pudo procesar la compra:\n${error.message}`,
+                [
+                  { text: 'OK' },
+                  { 
+                    text: 'Reintentar', 
+                    onPress: handleCheckout 
+                  }
+                ]
+              );
+            }
           }
         },
       ]
